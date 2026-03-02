@@ -44,6 +44,13 @@ in {
       default = 8;
       description = "Maximum number of concurrent uploads.";
     };
+
+    logFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = "Path to a file for daemon log output.";
+      example = "/var/log/cerbernix/daemon.log";
+    };
   };
 
   config = lib.mkIf cfg.enable {

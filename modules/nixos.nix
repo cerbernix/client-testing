@@ -46,7 +46,11 @@ in {
         PrivateTmp = true;
         NoNewPrivileges = true;
         ProtectSystem = "strict";
-        ReadWritePaths = [ "/nix/store" ];
+        ReadWritePaths = [ "/nix/store" ]
+          ++ lib.optional (cfg.logFile != null) (builtins.dirOf cfg.logFile);
+      } // lib.optionalAttrs (cfg.logFile != null) {
+        StandardOutput = "append:${cfg.logFile}";
+        StandardError = "append:${cfg.logFile}";
       };
     };
   };

@@ -41,8 +41,8 @@ in {
         ProgramArguments = [ "/bin/sh" "-c" "${daemonScript}" ];
         KeepAlive = true;
         RunAtLoad = true;
-        StandardOutPath = "/var/log/cerbernix/daemon.log";
-        StandardErrorPath = "/var/log/cerbernix/daemon.err.log";
+        StandardOutPath = if cfg.logFile != null then cfg.logFile else "/var/log/cerbernix/daemon.log";
+        StandardErrorPath = if cfg.logFile != null then cfg.logFile else "/var/log/cerbernix/daemon.err.log";
       };
     };
   };
