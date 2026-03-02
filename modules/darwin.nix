@@ -8,6 +8,8 @@ let
   daemonScript = pkgs.writeShellScript "cerbernix-daemon-start" ''
     /bin/wait4path /nix/store
 
+    export PATH="${pkgs.nix}/bin:$PATH"
+
     mkdir -p "$(dirname "${cfg.socket}")"
 
     ${lib.optionalString (cfg.tokenFile != null) ''
