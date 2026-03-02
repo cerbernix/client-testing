@@ -45,6 +45,17 @@ in {
       description = "Maximum number of concurrent uploads.";
     };
 
+    netrcFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = ''
+        Path to a netrc file for credential lookup.
+        Used as an alternative to tokenFile for authentication.
+        The daemon uses the password field for the matching host as the bearer token.
+      '';
+      example = "/run/secrets/cerbernix-netrc";
+    };
+
     logFile = lib.mkOption {
       type = lib.types.nullOr lib.types.path;
       default = null;

@@ -18,7 +18,8 @@ let
       --cache-url "${cfg.cacheUrl}" \
       --socket "${cfg.socket}" \
       --debounce "${toString cfg.debounce}" \
-      --max-uploads "${toString cfg.maxUploads}"
+      --max-uploads "${toString cfg.maxUploads}" \
+      ${lib.optionalString (cfg.netrcFile != null) ''--netrc-file "${cfg.netrcFile}"''}
   '';
 in {
   imports = [ ./shared.nix ];

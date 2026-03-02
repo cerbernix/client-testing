@@ -13,7 +13,8 @@ let
       --cache-url "${cfg.cacheUrl}" \
       --socket "${cfg.socket}" \
       --debounce "${toString cfg.debounce}" \
-      --max-uploads "${toString cfg.maxUploads}"
+      --max-uploads "${toString cfg.maxUploads}" \
+      ${lib.optionalString (cfg.netrcFile != null) ''--netrc-file "${cfg.netrcFile}"''}
   '');
 in {
   imports = [ ./shared.nix ];
@@ -48,6 +49,7 @@ in {
         ProtectSystem = "strict";
         ReadWritePaths = [ "/nix/store" ]
           ++ lib.optional (cfg.logFile != null) (builtins.dirOf cfg.logFile);
+        ReadOnlyPaths = lib.optional (cfg.netrcFile != null) cfg.netrcFile;
       } // lib.optionalAttrs (cfg.logFile != null) {
         StandardOutput = "append:${cfg.logFile}";
         StandardError = "append:${cfg.logFile}";
