@@ -4,16 +4,16 @@
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
 
   outputs = { self, nixpkgs }: let
-    version = "0.1.0+05e5cea";
+    version = "0.2.0+40a7c63";
 
     sources = {
       x86_64-linux = {
-        url = "https://github.com/cerbernix/client-testing/releases/download/v0.1.0%2B05e5cea/cerbernix-x86_64-unknown-linux-gnu.tar.gz";
-        hash = "sha256-BQ5MAxQ+6+2SszNpRhgmLlXBn+Ge3XNe5YxhJRalXoc=";
+        url = "https://github.com/cerbernix/client-testing/releases/download/v0.2.0%2B40a7c63/cerbernix-x86_64-unknown-linux-gnu.tar.gz";
+        hash = "sha256-DdJni6IZe85q2S6ocgHWHrnyW7lyFc/YUtdkDNG7CVE=";
       };
       aarch64-darwin = {
-        url = "https://github.com/cerbernix/client-testing/releases/download/v0.1.0%2B05e5cea/cerbernix-aarch64-apple-darwin.tar.gz";
-        hash = "sha256-YUNXJr5XewO+gvEpFzD/psJXSGK9AHuBagoPMOoezVk=";
+        url = "https://github.com/cerbernix/client-testing/releases/download/v0.2.0%2B40a7c63/cerbernix-aarch64-apple-darwin.tar.gz";
+        hash = "sha256-IY+ASQaMBCVJ19et5+pPJPZV6hCzfKIIG3PSTyzNLkc=";
       };
     };
 
