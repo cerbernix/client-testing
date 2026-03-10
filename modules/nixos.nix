@@ -35,6 +35,7 @@ in {
       description = "Cerbernix binary cache upload daemon";
       wantedBy = [ "multi-user.target" ];
       after = [ "network.target" ];
+      path = [ config.nix.package ];
 
       serviceConfig = {
         ExecStart = daemonScript;
