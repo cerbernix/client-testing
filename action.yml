@@ -1,0 +1,28 @@
+name: Setup Cerbernix
+description: Install cerbernix, start the daemon, and configure Nix post-build-hook for automatic cache uploads
+
+inputs:
+  cache-name:
+    description: Short cache name — expands to https://{cache-name}.cerbernix.com
+    required: true
+  token:
+    description: Bearer token for cache authentication
+    required: true
+  version:
+    description: Release tag to install (e.g. v0.1.0+05e5cea). Use "latest" to auto-detect.
+    required: false
+    default: latest
+  max-uploads:
+    description: Maximum number of concurrent uploads
+    required: false
+    default: "8"
+  debounce:
+    description: Batch debounce time in seconds
+    required: false
+    default: "5"
+
+runs:
+  using: node20
+  main: index.js
+  post: post.js
+  post-if: success()
