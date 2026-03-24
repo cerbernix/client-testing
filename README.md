@@ -63,7 +63,38 @@ Provides NixOS and nix-darwin modules that run a `cerbernix daemon` and configur
 }
 ```
 
-## Options
+## GitHub Action
+
+Add to your workflow to automatically push build outputs to your cache:
+
+```yaml
+- uses: cerbernix/client-testing@master
+  with:
+    cache-name: your-team
+    token: ${{ secrets.CERBERNIX_TOKEN }}
+```
+
+All settings can also be configured via environment variables, which is useful for non-GitHub CI systems or when you prefer env-based configuration:
+
+```yaml
+env:
+  CERBERNIX_CACHE_NAME: your-team
+  CERBERNIX_TOKEN: ${{ secrets.CERBERNIX_TOKEN }}
+```
+
+### Action Settings
+
+| Input | Env Var | Default | Description |
+| ----- | ------- | ------- | ----------- |
+| `cache-name` | `CERBERNIX_CACHE_NAME` | — | Short cache name (expands to `https://{name}.cerbernix.com`) |
+| `token` | `CERBERNIX_TOKEN` | — | Bearer token for cache authentication |
+| `version` | `CERBERNIX_VERSION` | `latest` | Release tag to install (e.g. `v0.1.0+05e5cea`) |
+| `max-uploads` | `CERBERNIX_MAX_UPLOADS` | `8` | Max concurrent uploads |
+| `debounce` | `CERBERNIX_DEBOUNCE` | `5` | Batch debounce time in seconds |
+
+Action inputs take precedence over environment variables.
+
+## Nix Module Options
 
 | Option       | Type         | Default            | Description                                        |
 | ------------ | ------------ | ------------------ | -------------------------------------------------- |

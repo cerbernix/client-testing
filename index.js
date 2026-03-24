@@ -33,10 +33,10 @@ function sleepMs(ms) {
 
 // --- Validate required inputs ---
 
-const cacheName = getInput('CACHE-NAME');
-const token = getInput('TOKEN');
-if (!cacheName) fail("Input 'cache-name' is required");
-if (!token) fail("Input 'token' is required");
+const cacheName = getInput('CACHE-NAME') || process.env.CERBERNIX_CACHE_NAME || '';
+const token = getInput('TOKEN') || process.env.CERBERNIX_TOKEN || '';
+if (!cacheName) fail("Input 'cache-name' (or env CERBERNIX_CACHE_NAME) is required");
+if (!token) fail("Input 'token' (or env CERBERNIX_TOKEN) is required");
 
 // Ensure gh CLI can authenticate for release downloads
 if (!process.env.GH_TOKEN) {
@@ -59,7 +59,7 @@ console.log(`Platform: ${platform} → ${asset}`);
 
 // --- 2. Resolve version ---
 
-let version = getInput('VERSION') || 'latest';
+let version = getInput('VERSION') || process.env.CERBERNIX_VERSION || 'latest';
 if (version === 'latest') {
   version = capture(
     'gh release view --repo cerbernix/client-testing --json tagName --jq .tagName'
@@ -123,8 +123,8 @@ if (process.env.RUNNER_OS === 'Linux') {
 
 // --- 5. Start daemon ---
 
-const debounce = getInput('DEBOUNCE') || '5';
-const maxUploads = getInput('MAX-UPLOADS') || '8';
+const debounce = getInput('DEBOUNCE') || process.env.CERBERNIX_DEBOUNCE || '5';
+const maxUploads = getInput('MAX-UPLOADS') || process.env.CERBERNIX_MAX_UPLOADS || '8';
 const logPath = '/tmp/cerbernix-daemon.log';
 const socketPath = '/tmp/cerbernix.sock';
 
