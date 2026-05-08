@@ -192,11 +192,6 @@ async function resolveToken() {
 async function main() {
   const token = await resolveToken();
 
-  // Ensure gh CLI can authenticate for release downloads
-  if (!process.env.GH_TOKEN) {
-    process.env.GH_TOKEN = process.env.GITHUB_TOKEN || '';
-  }
-
   // --- 1. Detect platform ---
   const ASSETS = {
     'Linux-X64': 'cerbernix-x86_64-unknown-linux-gnu.tar.gz',
@@ -209,28 +204,25 @@ async function main() {
   if (!asset) fail(`Unsupported platform: ${platform}`);
   console.log(`Platform: ${platform} → ${asset}`);
 
-  // --- 2. Resolve version ---
-  let version = getInput('VERSION') || process.env.CERBERNIX_VERSION || 'latest';
-  if (version === 'latest') {
-    version = capture(
-      'gh release view --repo cerbernix/client-testing --json tagName --jq .tagName'
-    );
-  }
+  // --- 2. Resolve download URL ---
+  const version = getInput('VERSION') || process.env.CERBERNIX_VERSION || 'latest';
+  const downloadUrl = version === 'latest'
+    ? `https://github.com/cerbernix/client-testing/releases/latest/download/${asset}`
+    : `https://github.com/cerbernix/client-testing/releases/download/${version}/${asset}`;
   console.log(`Version: ${version}`);
+  debug(`Download URL: ${downloadUrl}`);
 
-  // --- 3. Download and install ---
+  // --- 3. Download and install (curl follows GitHub redirects to release CDN) ---
   const tmpdir = fs.mkdtempSync(path.join(os.tmpdir(), 'cerbernix-'));
   try {
-    execSync(
-      `gh release download ${quote(version)} --repo cerbernix/client-testing --pattern ${quote(asset)} --dir ${quote(tmpdir)}`,
-      { stdio: 'inherit' }
-    );
-    run(`tar -xzf ${quote(path.join(tmpdir, asset))} -C ${quote(tmpdir)}`);
+    const tarPath = path.join(tmpdir, asset);
+    run(`curl -fsSL --retry 3 -o ${quote(tarPath)} ${quote(downloadUrl)}`);
+    run(`tar -xzf ${quote(tarPath)} -C ${quote(tmpdir)}`);
     run(`sudo install -m 755 ${quote(path.join(tmpdir, 'cerbernix'))} /usr/local/bin/cerbernix`);
   } finally {
     fs.rmSync(tmpdir, { recursive: true, force: true });
   }
-  console.log(`Installed cerbernix ${version}`);
+  console.log(`Installed cerbernix (${version})`);
   try { run('cerbernix --version'); } catch {}
 
   // --- 4. Configure post-build-hook ---
