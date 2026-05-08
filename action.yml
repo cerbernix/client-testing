@@ -21,13 +21,9 @@ inputs:
     required: false
     default: latest
   max-uploads:
-    description: Maximum number of concurrent uploads
+    description: Maximum concurrent uploads to the cache.
     required: false
     default: "8"
-  debounce:
-    description: Batch debounce time in seconds
-    required: false
-    default: "5"
   debug:
     description: Emit verbose debug output (also enabled automatically when ACTIONS_STEP_DEBUG=true).
     required: false

@@ -244,8 +244,7 @@ async function main() {
   } finally {
     fs.rmSync(tmpdir, { recursive: true, force: true });
   }
-  console.log(`Installed cerbernix (${version})`);
-  try { run('cerbernix --version'); } catch {}
+  console.log(`Installed cerbernix ${release.tag_name}`);
 
   // --- 4. Configure post-build-hook ---
   const hookScript = [
@@ -310,17 +309,15 @@ async function main() {
   }
 
   // --- 5. Start daemon ---
-  const debounce = getInput('DEBOUNCE') || process.env.CERBERNIX_DEBOUNCE || '5';
   const maxUploads = getInput('MAX-UPLOADS') || process.env.CERBERNIX_MAX_UPLOADS || '8';
   const logPath = '/tmp/cerbernix-daemon.log';
   const socketPath = '/tmp/cerbernix.sock';
 
   const logFd = fs.openSync(logPath, 'w');
   const daemon = spawn('cerbernix', [
-    'daemon',
     '--cache-url', `https://${cacheHost}`,
+    'daemon',
     '--socket', socketPath,
-    '--debounce', debounce,
     '--max-uploads', maxUploads,
   ], {
     detached: true,
