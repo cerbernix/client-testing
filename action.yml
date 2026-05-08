@@ -6,8 +6,16 @@ inputs:
     description: Short cache name — expands to https://{cache-name}.cerbernix.com
     required: true
   token:
-    description: Bearer token for cache authentication
-    required: true
+    description: Bearer token for cache authentication. If omitted, an OIDC token exchange is performed using the GitHub Actions OIDC JWT.
+    required: false
+  oidc-scope:
+    description: Token scope to request from OIDC exchange ("r" or "rw").
+    required: false
+    default: rw
+  oidc-ttl:
+    description: Token TTL in seconds for OIDC exchange (60–21600).
+    required: false
+    default: "3600"
   version:
     description: Release tag to install (e.g. v0.1.0+05e5cea). Use "latest" to auto-detect.
     required: false
@@ -20,6 +28,10 @@ inputs:
     description: Batch debounce time in seconds
     required: false
     default: "5"
+  debug:
+    description: Emit verbose debug output (also enabled automatically when ACTIONS_STEP_DEBUG=true).
+    required: false
+    default: "false"
 
 runs:
   using: node20
