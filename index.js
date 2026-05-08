@@ -193,9 +193,11 @@ async function main() {
   const token = await resolveToken();
 
   // --- 1. Detect platform ---
+  // Asset names match what the release workflow publishes. Linux uses musl
+  // (statically linked) so it runs on any glibc/musl distro.
   const ASSETS = {
-    'Linux-X64': 'cerbernix-x86_64-unknown-linux-gnu.tar.gz',
-    'Linux-ARM64': 'cerbernix-aarch64-unknown-linux-gnu.tar.gz',
+    'Linux-X64': 'cerbernix-x86_64-unknown-linux-musl.tar.gz',
+    'Linux-ARM64': 'cerbernix-aarch64-unknown-linux-musl.tar.gz',
     'macOS-X64': 'cerbernix-x86_64-apple-darwin.tar.gz',
     'macOS-ARM64': 'cerbernix-aarch64-apple-darwin.tar.gz',
   };
@@ -204,12 +206,32 @@ async function main() {
   if (!asset) fail(`Unsupported platform: ${platform}`);
   console.log(`Platform: ${platform} → ${asset}`);
 
-  // --- 2. Resolve download URL ---
+  // --- 2. Resolve download URL via the GitHub API ---
+  // /releases/latest/download/<asset> doesn't URL-encode '+' in tags, so the
+  // redirect target 404s. Going through the API yields a properly-encoded
+  // browser_download_url.
   const version = getInput('VERSION') || process.env.CERBERNIX_VERSION || 'latest';
-  const downloadUrl = version === 'latest'
-    ? `https://github.com/cerbernix/client-testing/releases/latest/download/${asset}`
-    : `https://github.com/cerbernix/client-testing/releases/download/${version}/${asset}`;
-  console.log(`Version: ${version}`);
+  const releaseApiUrl = version === 'latest'
+    ? 'https://api.github.com/repos/cerbernix/client-testing/releases/latest'
+    : `https://api.github.com/repos/cerbernix/client-testing/releases/tags/${encodeURIComponent(version)}`;
+  debug(`Release API URL: ${releaseApiUrl}`);
+  const releaseResp = await httpRequest('GET', releaseApiUrl, {
+    headers: { 'User-Agent': 'cerbernix-action', 'Accept': 'application/vnd.github+json' },
+  });
+  if (releaseResp.status !== 200) {
+    fail(`GitHub release lookup failed (HTTP ${releaseResp.status}): ${releaseResp.body.slice(0, 300)}`);
+  }
+  let release;
+  try { release = JSON.parse(releaseResp.body); } catch (e) {
+    fail(`GitHub release lookup returned non-JSON: ${releaseResp.body.slice(0, 300)}`);
+  }
+  const matchAsset = (release.assets || []).find((a) => a.name === asset);
+  if (!matchAsset) {
+    const available = (release.assets || []).map((a) => a.name).join(', ') || '(none)';
+    fail(`Release ${release.tag_name} has no asset named '${asset}'. Available: ${available}`);
+  }
+  const downloadUrl = matchAsset.browser_download_url;
+  console.log(`Version: ${release.tag_name}`);
   debug(`Download URL: ${downloadUrl}`);
 
   // --- 3. Download and install (curl follows GitHub redirects to release CDN) ---
