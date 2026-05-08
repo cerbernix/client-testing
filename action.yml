@@ -33,4 +33,6 @@ runs:
   using: node20
   main: index.js
   post: post.js
-  post-if: success()
+  # Always run the post step so the daemon can flush queued uploads on
+  # job failure too — partial caches from a failed run still help next time.
+  post-if: always()

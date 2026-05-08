@@ -21,23 +21,26 @@ if (pid) {
   } catch {}
 
   if (running) {
-    console.log(`Sending SIGTERM to daemon (PID ${pid})`);
-    try { process.kill(pid, 'SIGTERM'); } catch {}
+    // Daemon listens for SIGINT (tokio::signal::ctrl_c) to break its accept
+    // loop and drain the upload queue. SIGTERM would kill it before flushing.
+    console.log(`Sending SIGINT to daemon (PID ${pid}) and waiting for queue to drain`);
+    try { process.kill(pid, 'SIGINT'); } catch {}
 
+    const DRAIN_TIMEOUT_S = 300;
     let stopped = false;
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < DRAIN_TIMEOUT_S; i++) {
       sleepMs(1000);
       try {
         process.kill(pid, 0);
       } catch {
-        console.log('Daemon stopped gracefully');
+        console.log(`Daemon stopped gracefully after ${i + 1}s`);
         stopped = true;
         break;
       }
     }
 
     if (!stopped) {
-      console.log('::warning::Daemon did not stop gracefully, sending SIGKILL');
+      console.log(`::warning::Daemon still running after ${DRAIN_TIMEOUT_S}s, sending SIGKILL — pending uploads dropped`);
       try { process.kill(pid, 'SIGKILL'); } catch {}
     }
   } else {
