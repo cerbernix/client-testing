@@ -46,6 +46,54 @@ function maskValue(v) {
   process.stdout.write(`::add-mask::${v}${os.EOL}`);
 }
 
+function parseSigningKey(cacheInfo) {
+  for (const line of cacheInfo.split(/\r?\n/)) {
+    const match = line.match(/^SigningKey:\s*(\S+:\S+)\s*$/);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+function signingKeyName(signingKey) {
+  return signingKey.split(':', 1)[0];
+}
+
+function removeStaleTrustedKeys(nixConf, signingKey) {
+  const currentName = signingKeyName(signingKey);
+  let changed = false;
+  const lines = nixConf.split(/\r?\n/);
+  const next = [];
+
+  for (const line of lines) {
+    const match = line.match(/^(\s*(?:extra-)?trusted-public-keys\s*=\s*)(.*)$/);
+    if (!match) {
+      next.push(line);
+      continue;
+    }
+
+    const prefix = match[1];
+    const rest = match[2];
+    const commentIdx = rest.indexOf('#');
+    const values = commentIdx === -1 ? rest : rest.slice(0, commentIdx);
+    const comment = commentIdx === -1 ? '' : rest.slice(commentIdx);
+    const keys = values.trim().split(/\s+/).filter(Boolean);
+    const filtered = keys.filter((key) => {
+      const isSameName = signingKeyName(key) === currentName;
+      const isCurrent = key === signingKey;
+      return !isSameName || isCurrent;
+    });
+
+    if (filtered.length !== keys.length) changed = true;
+    if (filtered.length > 0 || comment) {
+      next.push(`${prefix}${filtered.join(' ')}${comment ? ` ${comment}` : ''}`);
+    } else {
+      changed = true;
+    }
+  }
+
+  return { changed, nixConf: next.join(os.EOL) };
+}
+
 function httpRequest(method, urlStr, { headers = {}, body = null } = {}) {
   return new Promise((resolve, reject) => {
     const url = new URL(urlStr);
@@ -191,6 +239,8 @@ async function resolveToken() {
 
 async function main() {
   const token = await resolveToken();
+  const cacheHost = `${cacheName}.cerbernix.com`;
+  const cacheUrl = `https://${cacheHost}`;
 
   // --- 1. Detect platform ---
   // Asset names match what the release workflow publishes. Linux uses musl
@@ -268,8 +318,59 @@ async function main() {
     run("echo 'post-build-hook = /usr/local/bin/cerbernix-post-build-hook' | sudo tee -a /etc/nix/nix.conf");
   }
 
-  // --- 4b. Configure netrc for nix substitution from this cache ---
-  const cacheHost = `${cacheName}.cerbernix.com`;
+  // --- 4b. Configure Nix to substitute from this cache ---
+  let signingKey = null;
+  try {
+    const probe = await httpRequest('GET', `${cacheUrl}/nix-cache-info`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (probe.status === 200) {
+      console.log(`Cache reachable: ${cacheHost} (HTTP 200)`);
+      debug(`nix-cache-info body: ${probe.body.replace(/\n/g, ' | ')}`);
+      signingKey = parseSigningKey(probe.body);
+      if (signingKey) {
+        console.log(`Cache signing key: ${signingKey}`);
+      } else {
+        process.stdout.write(`::warning::${cacheHost}/nix-cache-info did not include SigningKey${os.EOL}`);
+      }
+    } else {
+      process.stdout.write(
+        `::warning::Probe of ${cacheHost}/nix-cache-info returned HTTP ${probe.status}: ${probe.body.slice(0, 300)}${os.EOL}`
+      );
+    }
+  } catch (e) {
+    process.stdout.write(`::warning::Could not probe cache: ${e.message}${os.EOL}`);
+  }
+
+  if (signingKey) {
+    const sanitized = removeStaleTrustedKeys(nixConf, signingKey);
+    if (sanitized.changed) {
+      const confTmp = path.join(os.tmpdir(), 'cerbernix-nix.conf');
+      fs.writeFileSync(confTmp, sanitized.nixConf.endsWith(os.EOL) ? sanitized.nixConf : sanitized.nixConf + os.EOL);
+      run(`sudo install -m 644 ${quote(confTmp)} /etc/nix/nix.conf`);
+      fs.unlinkSync(confTmp);
+      nixConf = sanitized.nixConf;
+      console.log(`Removed stale trusted key entries for ${signingKeyName(signingKey)}`);
+    }
+  }
+
+  const nixConfAdditions = [];
+  if (!nixConf.includes(cacheUrl)) {
+    nixConfAdditions.push(`extra-substituters = ${cacheUrl}`);
+    nixConfAdditions.push(`extra-trusted-substituters = ${cacheUrl}`);
+  }
+  if (signingKey && !nixConf.includes(signingKey)) {
+    nixConfAdditions.push(`extra-trusted-public-keys = ${signingKey}`);
+  }
+  if (nixConfAdditions.length > 0) {
+    const confAddTmp = path.join(os.tmpdir(), 'cerbernix-nix.conf.add');
+    fs.writeFileSync(confAddTmp, os.EOL + nixConfAdditions.join(os.EOL) + os.EOL);
+    run(`sudo tee -a /etc/nix/nix.conf < ${quote(confAddTmp)} >/dev/null`);
+    fs.unlinkSync(confAddTmp);
+    console.log('Configured Nix substituter and signing key');
+  }
+
+  // --- 4c. Configure netrc for nix substitution from this cache ---
   const netrcPath = path.join(process.env.RUNNER_TEMP || '/tmp', 'cerbernix.netrc');
   fs.writeFileSync(netrcPath, `machine ${cacheHost} login cerbernix password ${token}\n`, { mode: 0o600 });
   fs.appendFileSync(process.env.GITHUB_ENV, `NIX_NETRC=${netrcPath}${os.EOL}`);
@@ -291,23 +392,6 @@ async function main() {
     }
   }
 
-  // --- 4c. Sanity check: hit /nix-cache-info with the token ---
-  try {
-    const probe = await httpRequest('GET', `https://${cacheHost}/nix-cache-info`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (probe.status === 200) {
-      console.log(`Cache reachable: ${cacheHost} (HTTP 200)`);
-      debug(`nix-cache-info body: ${probe.body.replace(/\n/g, ' | ')}`);
-    } else {
-      process.stdout.write(
-        `::warning::Probe of ${cacheHost}/nix-cache-info returned HTTP ${probe.status}: ${probe.body.slice(0, 300)}${os.EOL}`
-      );
-    }
-  } catch (e) {
-    process.stdout.write(`::warning::Could not probe cache: ${e.message}${os.EOL}`);
-  }
-
   // --- 5. Start daemon ---
   const maxUploads = getInput('MAX-UPLOADS') || process.env.CERBERNIX_MAX_UPLOADS || '8';
   const logPath = '/tmp/cerbernix-daemon.log';
@@ -315,7 +399,7 @@ async function main() {
 
   const logFd = fs.openSync(logPath, 'w');
   const daemon = spawn('cerbernix', [
-    '--cache-url', `https://${cacheHost}`,
+    '--cache-url', cacheUrl,
     'daemon',
     '--socket', socketPath,
     '--max-uploads', maxUploads,
