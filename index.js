@@ -32,6 +32,20 @@ function sleepMs(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
+function delayMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parsePositiveInt(value, fallback, label) {
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    process.stdout.write(`::warning::Invalid ${label} '${value}', using ${fallback}${os.EOL}`);
+    return fallback;
+  }
+  return parsed;
+}
+
 const debugEnabled =
   (getInput('DEBUG') || process.env.CERBERNIX_DEBUG || '').toLowerCase() === 'true' ||
   process.env.ACTIONS_STEP_DEBUG === 'true' ||
@@ -94,9 +108,14 @@ function removeStaleTrustedKeys(nixConf, signingKey) {
   return { changed, nixConf: next.join(os.EOL) };
 }
 
-function httpRequest(method, urlStr, { headers = {}, body = null } = {}) {
+function httpRequest(method, urlStr, { headers = {}, body = null, timeoutMs = 0 } = {}) {
   return new Promise((resolve, reject) => {
     const url = new URL(urlStr);
+    let timeout = null;
+    const finish = (fn, value) => {
+      if (timeout) clearTimeout(timeout);
+      fn(value);
+    };
     const opts = {
       method,
       hostname: url.hostname,
@@ -111,17 +130,55 @@ function httpRequest(method, urlStr, { headers = {}, body = null } = {}) {
       const chunks = [];
       res.on('data', (c) => chunks.push(c));
       res.on('end', () => {
-        resolve({
+        finish(resolve, {
           status: res.statusCode,
           headers: res.headers,
           body: Buffer.concat(chunks).toString('utf8'),
         });
       });
     });
-    req.on('error', reject);
+    if (timeoutMs > 0) {
+      timeout = setTimeout(() => {
+        req.destroy(new Error(`request timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+      timeout.unref?.();
+    }
+    req.on('error', (e) => finish(reject, e));
     if (body) req.write(body);
     req.end();
   });
+}
+
+function isRetryableHttpStatus(status) {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+async function httpRequestWithRetry(method, urlStr, requestOpts, retryOpts) {
+  const attempts = retryOpts.attempts;
+  const timeoutMs = retryOpts.timeoutMs;
+  const backoffMs = retryOpts.backoffMs;
+  const label = retryOpts.label;
+
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      const resp = await httpRequest(method, urlStr, { ...requestOpts, timeoutMs });
+      if (!isRetryableHttpStatus(resp.status) || attempt === attempts) {
+        return resp;
+      }
+
+      const waitMs = backoffMs * (2 ** (attempt - 1));
+      console.log(`OIDC: ${label} attempt ${attempt}/${attempts} returned HTTP ${resp.status}; retrying in ${waitMs}ms`);
+      await delayMs(waitMs);
+    } catch (e) {
+      if (attempt === attempts) throw e;
+
+      const waitMs = backoffMs * (2 ** (attempt - 1));
+      console.log(`OIDC: ${label} attempt ${attempt}/${attempts} failed: ${e.message}; retrying in ${waitMs}ms`);
+      await delayMs(waitMs);
+    }
+  }
+
+  throw new Error(`${label} failed after ${attempts} attempts`);
 }
 
 // --- Validate cache-name ---
@@ -154,17 +211,42 @@ async function resolveToken() {
   const audience = `https://${cacheName}.cerbernix.com`;
   const scope = getInput('OIDC-SCOPE') || 'rw';
   const ttl = parseInt(getInput('OIDC-TTL') || '3600', 10);
+  const oidcRequestTimeoutMs = parsePositiveInt(
+    getInput('OIDC-REQUEST-TIMEOUT-MS') || process.env.CERBERNIX_OIDC_REQUEST_TIMEOUT_MS,
+    5000,
+    'OIDC request timeout'
+  );
+  const oidcRequestAttempts = parsePositiveInt(
+    getInput('OIDC-REQUEST-ATTEMPTS') || process.env.CERBERNIX_OIDC_REQUEST_ATTEMPTS,
+    3,
+    'OIDC request attempts'
+  );
+  const oidcRequestBackoffMs = parsePositiveInt(
+    getInput('OIDC-REQUEST-BACKOFF-MS') || process.env.CERBERNIX_OIDC_REQUEST_BACKOFF_MS,
+    500,
+    'OIDC request backoff'
+  );
 
-  console.log(`OIDC: requesting JWT (audience=${audience})`);
+  console.log(
+    `OIDC: requesting JWT (audience=${audience}, timeout=${oidcRequestTimeoutMs}ms, attempts=${oidcRequestAttempts})`
+  );
 
   // 1. Get the GitHub OIDC JWT
   const jwtUrl = `${reqUrl}&audience=${encodeURIComponent(audience)}`;
   debug(`OIDC: GET ${jwtUrl.replace(/[?&]token=[^&]*/, '')}`);
   let jwtResp;
   try {
-    jwtResp = await httpRequest('GET', jwtUrl, {
-      headers: { Authorization: `Bearer ${reqTok}` },
-    });
+    jwtResp = await httpRequestWithRetry(
+      'GET',
+      jwtUrl,
+      { headers: { Authorization: `Bearer ${reqTok}` } },
+      {
+        label: 'JWT request',
+        attempts: oidcRequestAttempts,
+        timeoutMs: oidcRequestTimeoutMs,
+        backoffMs: oidcRequestBackoffMs,
+      }
+    );
   } catch (e) {
     fail(`OIDC: failed to contact GitHub OIDC endpoint: ${e.message}`);
   }
@@ -206,16 +288,28 @@ async function resolveToken() {
 
   // 2. Exchange JWT for cbx_ token
   const exchangeUrl = `https://${cacheName}.cerbernix.com/oidc/token`;
-  console.log(`OIDC: exchanging JWT at ${exchangeUrl} (scope=${scope}, ttl=${ttl})`);
+  console.log(
+    `OIDC: exchanging JWT at ${exchangeUrl} (scope=${scope}, ttl=${ttl}, timeout=${oidcRequestTimeoutMs}ms, attempts=${oidcRequestAttempts})`
+  );
   let exchResp;
   try {
-    exchResp = await httpRequest('POST', exchangeUrl, {
-      headers: {
-        Authorization: `Bearer ${jwt}`,
-        'Content-Type': 'application/json',
+    exchResp = await httpRequestWithRetry(
+      'POST',
+      exchangeUrl,
+      {
+        headers: {
+          Authorization: `Bearer ${jwt}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ scope, ttl }),
       },
-      body: JSON.stringify({ scope, ttl }),
-    });
+      {
+        label: 'token exchange',
+        attempts: oidcRequestAttempts,
+        timeoutMs: oidcRequestTimeoutMs,
+        backoffMs: oidcRequestBackoffMs,
+      }
+    );
   } catch (e) {
     fail(`OIDC: failed to contact ${exchangeUrl}: ${e.message}`);
   }

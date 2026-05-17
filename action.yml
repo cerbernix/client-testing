@@ -16,6 +16,18 @@ inputs:
     description: Token TTL in seconds for OIDC exchange (60–21600).
     required: false
     default: "3600"
+  oidc-request-timeout-ms:
+    description: Timeout in milliseconds for each OIDC JWT/exchange HTTP attempt.
+    required: false
+    default: "5000"
+  oidc-request-attempts:
+    description: Maximum OIDC JWT/exchange HTTP attempts before failing.
+    required: false
+    default: "3"
+  oidc-request-backoff-ms:
+    description: Initial OIDC retry backoff in milliseconds, doubled after each failed attempt.
+    required: false
+    default: "500"
   version:
     description: Release tag to install (e.g. v0.1.0+05e5cea). Use "latest" to auto-detect.
     required: false

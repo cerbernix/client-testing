@@ -88,6 +88,11 @@ env:
 | ----- | ------- | ------- | ----------- |
 | `cache-name` | `CERBERNIX_CACHE_NAME` | — | Short cache name (expands to `https://{name}.cerbernix.com`) |
 | `token` | `CERBERNIX_TOKEN` | — | Bearer token for cache authentication |
+| `oidc-scope` | — | `rw` | Token scope to request from OIDC exchange (`r` or `rw`) |
+| `oidc-ttl` | — | `3600` | Token TTL in seconds for OIDC exchange |
+| `oidc-request-timeout-ms` | `CERBERNIX_OIDC_REQUEST_TIMEOUT_MS` | `5000` | Timeout for each OIDC JWT/exchange HTTP attempt |
+| `oidc-request-attempts` | `CERBERNIX_OIDC_REQUEST_ATTEMPTS` | `3` | Maximum OIDC JWT/exchange HTTP attempts before failing |
+| `oidc-request-backoff-ms` | `CERBERNIX_OIDC_REQUEST_BACKOFF_MS` | `500` | Initial OIDC retry backoff in milliseconds, doubled after each failed attempt |
 | `version` | `CERBERNIX_VERSION` | `latest` | Release tag to install (e.g. `v0.1.0+05e5cea`) |
 | `max-uploads` | `CERBERNIX_MAX_UPLOADS` | `8` | Max concurrent uploads |
 | `debounce` | `CERBERNIX_DEBOUNCE` | `5` | Batch debounce time in seconds |
